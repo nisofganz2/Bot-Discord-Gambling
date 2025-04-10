@@ -1,0 +1,43 @@
+{
+  "currency": {
+    "name": "💎 Diamond",
+    "symbol": "💎"
+  },
+  "rewards": {
+    "daily": 100,
+    "work": {
+      "min": 10,
+      "max": 50
+    }
+  },
+  "gambling": {
+    "coinflip": {
+      "min_bet": 10,
+      "max_bet": 1000
+    },
+    "slots": {
+      "min_bet": 20,
+      "max_bet": 2000,
+      "symbols": ["🍎", "🍊", "🍇", "💎", "7️⃣"],
+      "multipliers": {
+        "three_seven": 10,
+        "three_diamond": 7,
+        "three_same": 5,
+        "two_same": 2
+      }
+    },
+    "roulette": {
+      "min_bet": 50,
+      "max_bet": 5000,
+      "multipliers": {
+        "straight": 35,
+        "red_black": 2,
+        "even_odd": 2
+      }
+    },
+    "blackjack": {
+      "min_bet": 50,
+      "max_bet": 3000
+    }
+  }
+}
