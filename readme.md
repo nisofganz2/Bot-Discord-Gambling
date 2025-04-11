@@ -1,63 +1,98 @@
-# 🎮 Discord Gaming Bot
+# 🎮 Growtopia Bot Disocrd
 
-Bot Discord gaming dengan fitur gambling seru.
+A feature-rich Discord bot that implements Growtopia-like currency system (WL, DL, BGL) with gambling and daily rewards.
 
-## ⚡ Fitur
+## ✨ Features
 
-### 💰 Economy
-- `!daily` - Dapatkan 100 💎 setiap hari
-- `!work` - Bekerja untuk mendapatkan 10-50 💎
-- `!balance` - Cek saldo dan statistik
-- `!leaderboard` - Lihat 10 pemain terkaya
+### 💰 Currency System
+- **World Lock (WL)**: Basic currency unit
+- **Diamond Lock (DL)**: Equal to 100 WL
+- **Blue Gem Lock (BGL)**: Equal to 100 DL (10,000 WL)
 
-### 🎲 Games
-- `!coinflip <bet>` - Taruhan dengan koin (min: 10 💎, max: 1000 💎)
-- `!slots <bet>` - Main slot machine (min: 20 💎, max: 2000 💎)
-  - 3x 7️⃣ = 10x
-  - 3x 💎 = 7x
-  - 3 simbol sama = 5x
-  - 2 simbol sama = 2x
-- `!roulette <bet>` - Main roulette (min: 50 💎, max: 5000 💎)
-  - Straight up (angka) = 35x
-  - Red/Black = 2x
-  - Even/Odd = 2x
+### 🎲 Games & Features
+- **CSN (Casino)**
+  - Host gambling games with custom bet amounts
+  - Random number generation (1-100)
+  - Multiple players can join
+  - Automatic winner detection and prize distribution
 
-## 🚀 Setup
+- **Daily Rewards**
+  - Claim 50 WL every 24 hours
+  - Visual countdown timer for next claim
+  - Embedded messages with reward information
 
-1. Clone repository ini
+- **Leaderboard System**
+  - Top 10 richest players
+  - Real-time balance tracking
+  - Beautiful embedded display
+
+## 🚀 Commands
+
+| Command | Description |
+|---------|-------------|
+| `!balance` | Check your current balance |
+| `!daily` | Claim your daily reward |
+| `!leaderboard` | View the richest players |
+| `!csn <amount>` | Start a CSN game with specified bet |
+| `!join` | Join an active CSN game |
+
+## 💻 Setup
+
+1. Clone this repository
 2. Install dependencies:
-```bash
-npm install
-```
+   ```bash
+   npm install
+   ```
+3. Create a `.env` file and add your Discord bot token:
+   ```
+   DISCORD_TOKEN=your_bot_token_here
+   ```
+4. Start the bot:
+   ```bash
+   npm start
+   ```
 
-3. Buat file `.env` dan isi dengan token bot Discord:
-```env
-DISCORD_TOKEN=your_discord_token_here
-```
+## 🔧 Requirements
 
-4. Jalankan bot:
-```bash
-npm run dev
-```
+- Node.js v16.9.0 or higher
+- Discord.js v14
+- A Discord Bot Token
 
-## ⚙️ Konfigurasi
+## 📦 Dependencies
 
-Semua pengaturan bot ada di `config.json`:
-- Nama dan simbol mata uang
-- Jumlah reward harian dan work
-- Minimal dan maksimal bet untuk setiap game
-- Multiplier untuk slot dan roulette
+- discord.js: Discord bot framework
+- dotenv: Environment variable management
 
-## 📊 Database
+## 🎯 Features in Detail
 
-Bot menggunakan sistem file JSON sederhana untuk menyimpan data pemain:
-- Saldo
-- Statistik menang/kalah
-- Waktu claim daily terakhir
-- Total games dimainkan
+### CSN Game
+The CSN (Casino) game is a gambling system where:
+- A host creates a game with a bet amount
+- Players can join by matching the bet
+- Each participant gets a random number (1-100)
+- Highest number wins the total pot
+- Results are displayed in an embedded message
 
-## 🔒 Keamanan
+### Currency Conversion
+Automatic currency conversion between:
+- 1 DL = 100 WL
+- 1 BGL = 100 DL = 10,000 WL
 
-- Rate limiting untuk mencegah spam
-- Validasi input untuk semua command
-- Sistem backup data otomatis
+### Daily Rewards
+- 50 WL daily reward
+- 24-hour cooldown
+- Visual countdown for next available claim
+- Embedded messages showing rewards
+
+## 🔒 Security
+
+- Balance tracking per user
+- Anti-cheat measures in games
+- Cooldown system for daily rewards
+
+## 🎨 Visual Features
+
+- Rich embed messages
+- Colored notifications
+- Emoji integration
+- Formatted currency display

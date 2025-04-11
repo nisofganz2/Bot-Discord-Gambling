@@ -1,70 +1,54 @@
-import { Client, Events, GatewayIntentBits, EmbedBuilder } from 'discord.js';
-import dotenv from 'dotenv';
-import fs from 'fs';
+const { Client, Events, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const dotenv = require('dotenv');
 
 dotenv.config();
-const config = JSON.parse(fs.readFileSync('./config.json', 'utf-8'));
 
-let userDB = {};
-try {
-  userDB = JSON.parse(fs.readFileSync('./userdata.json', 'utf-8'));
-} catch {
-  fs.writeFileSync('./userdata.json', '{}');
-}
+const CONVERSION_RATES = {
+  WL: 1,
+  DL: 100,
+  BGL: 10000
+};
 
-function saveData() {
-  fs.writeFileSync('./userdata.json', JSON.stringify(userDB, null, 2));
-}
-
-function getUserData(userId) {
-  if (!userDB[userId]) {
-    userDB[userId] = {
-      balance: 0,
-      lastDaily: null,
-      totalWon: 0,
-      totalLost: 0,
-      gamesPlayed: 0
-    };
-    saveData();
-  }
-  return userDB[userId];
-}
-
-function random(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function getLeaderboard() {
-  return Object.entries(userDB)
-    .map(([userId, data]) => ({
-      userId,
-      balance: data.balance,
-      totalWon: data.totalWon || 0,
-      totalLost: data.totalLost || 0,
-      gamesPlayed: data.gamesPlayed || 0
-    }))
-    .sort((a, b) => b.balance - a.balance);
-}
-
-function updateStats(userData, won, amount) {
-  userData.gamesPlayed++;
-  if (won) {
-    userData.totalWon += amount;
-  } else {
-    userData.totalLost += amount;
-  }
-}
+const userBalances = new Map();
+const activeGames = new Map();
+const lastDailyClaim = new Map();
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-  ]
+  ],
 });
 
+function formatBalance(wls) {
+  const bgl = Math.floor(wls / CONVERSION_RATES.BGL);
+  wls %= CONVERSION_RATES.BGL;
+  const dl = Math.floor(wls / CONVERSION_RATES.DL);
+  wls %= CONVERSION_RATES.DL;
+  
+  let result = [];
+  if (bgl > 0) result.push(`${bgl} BGL`);
+  if (dl > 0) result.push(`${dl} DL`);
+  if (wls > 0) result.push(`${wls} WL`);
+  return result.join(', ') || '0 WL';
+}
+
+function getBalance(userId) {
+  return userBalances.get(userId) || 0;
+}
+
+function canClaimDaily(userId) {
+  const lastClaim = lastDailyClaim.get(userId);
+  if (!lastClaim) return true;
+  
+  const now = new Date();
+  const timeDiff = now - lastClaim;
+  return timeDiff >= 24 * 60 * 60 * 1000;
+}
+
 client.once(Events.ClientReady, (readyClient) => {
-  console.log(`Ready as ${readyClient.user.tag}`);
+  console.log(`Ready! Logged in as ${readyClient.user.tag}`);
 });
 
 client.on(Events.MessageCreate, async (message) => {
@@ -72,201 +56,184 @@ client.on(Events.MessageCreate, async (message) => {
 
   const args = message.content.toLowerCase().split(' ');
   const command = args[0];
-  const userData = getUserData(message.author.id);
 
-  switch (command) {
-    case '!daily':
-      const now = Date.now();
-      const lastDaily = userData.lastDaily;
-      if (lastDaily && now - lastDaily < 24 * 60 * 60 * 1000) {
-        const timeLeft = Math.ceil((24 * 60 * 60 * 1000 - (now - lastDaily)) / (60 * 60 * 1000));
-        await message.reply(`Tunggu ${timeLeft} jam lagi ya!`);
-        return;
-      }
-      userData.balance += config.rewards.daily;
-      userData.lastDaily = now;
-      saveData();
-      await message.reply(`Nih ${config.rewards.daily} ${config.currency.symbol}! Sekarang kamu punya ${userData.balance} ${config.currency.symbol}`);
-      break;
+  if (command === '!balance') {
+    const balance = getBalance(message.author.id);
+    await message.reply(`Your balance: ${formatBalance(balance)}`);
+    return;
+  }
 
-    case '!work':
-      const earned = random(config.rewards.work.min, config.rewards.work.max);
-      userData.balance += earned;
-      saveData();
-      await message.reply(`Nih hasil kerjamu ${earned} ${config.currency.symbol}! Sekarang kamu punya ${userData.balance} ${config.currency.symbol}`);
-      break;
-
-    case '!balance':
-      const statsEmbed = new EmbedBuilder()
-        .setColor('#0099ff')
-        .setTitle(`${message.author.username}`)
-        .addFields(
-          { name: 'Uang', value: `${userData.balance} ${config.currency.symbol}`, inline: true },
-          { name: 'Menang', value: `${userData.totalWon || 0} ${config.currency.symbol}`, inline: true },
-          { name: 'Kalah', value: `${userData.totalLost || 0} ${config.currency.symbol}`, inline: true },
-          { name: 'Main', value: `${userData.gamesPlayed || 0}x`, inline: true }
-        );
-      await message.reply({ embeds: [statsEmbed] });
-      break;
-
-    case '!leaderboard':
-      const leaderboard = getLeaderboard().slice(0, 10);
-      const leaderboardEmbed = new EmbedBuilder()
-        .setColor('#FFD700')
-        .setTitle('Top 10 Terkaya')
-        .setDescription(
-          leaderboard
-            .map((user, index) => {
-              const member = message.guild.members.cache.get(user.userId);
-              const username = member ? member.user.username : 'Unknown';
-              return `${index + 1}. ${username}\n💰 ${user.balance} ${config.currency.symbol}\n📊 ${user.totalWon}/${user.totalLost}`;
-            })
-            .join('\n\n')
-        );
-      await message.reply({ embeds: [leaderboardEmbed] });
-      break;
-
-    case '!coinflip':
-      const bet = parseInt(args[1]);
-      if (!bet || bet < config.gambling.coinflip.min_bet || bet > config.gambling.coinflip.max_bet) {
-        await message.reply(`Minimal ${config.gambling.coinflip.min_bet} maksimal ${config.gambling.coinflip.max_bet} ${config.currency.symbol}`);
-        return;
-      }
-      if (userData.balance < bet) {
-        await message.reply(`Duit kamu kurang! Perlu ${bet} ${config.currency.symbol}`);
-        return;
-      }
-      const win = Math.random() < 0.5;
-      if (win) {
-        userData.balance += bet;
-        updateStats(userData, true, bet);
-        await message.reply(`Menang ${bet} ${config.currency.symbol}! Sekarang punya ${userData.balance} ${config.currency.symbol}`);
-      } else {
-        userData.balance -= bet;
-        updateStats(userData, false, bet);
-        await message.reply(`Kalah ${bet} ${config.currency.symbol}! Sisa ${userData.balance} ${config.currency.symbol}`);
-      }
-      saveData();
-      break;
-
-    case '!slots':
-      const slotBet = parseInt(args[1]);
-      if (!slotBet || slotBet < config.gambling.slots.min_bet || slotBet > config.gambling.slots.max_bet) {
-        await message.reply(`Minimal ${config.gambling.slots.min_bet} maksimal ${config.gambling.slots.max_bet} ${config.currency.symbol}`);
-        return;
-      }
-      if (userData.balance < slotBet) {
-        await message.reply(`Duit kamu kurang! Perlu ${slotBet} ${config.currency.symbol}`);
-        return;
-      }
-
-      const symbols = config.gambling.slots.symbols;
-      const slot1 = symbols[Math.floor(Math.random() * symbols.length)];
-      const slot2 = symbols[Math.floor(Math.random() * symbols.length)];
-      const slot3 = symbols[Math.floor(Math.random() * symbols.length)];
+  if (command === '!daily') {
+    if (!canClaimDaily(message.author.id)) {
+      const lastClaim = lastDailyClaim.get(message.author.id);
+      const timeLeft = 24 * 60 * 60 * 1000 - (new Date() - lastClaim);
+      const hoursLeft = Math.floor(timeLeft / (60 * 60 * 1000));
+      const minutesLeft = Math.floor((timeLeft % (60 * 60 * 1000)) / (60 * 1000));
       
-      let multiplier = 0;
-      if (slot1 === slot2 && slot2 === slot3) {
-        if (slot1 === "7️⃣") multiplier = config.gambling.slots.multipliers.three_seven;
-        else if (slot1 === "💎") multiplier = config.gambling.slots.multipliers.three_diamond;
-        else multiplier = config.gambling.slots.multipliers.three_same;
-      } else if (slot1 === slot2 || slot2 === slot3 || slot1 === slot3) {
-        multiplier = config.gambling.slots.multipliers.two_same;
-      }
-
-      const winAmount = slotBet * multiplier;
-      userData.balance = userData.balance - slotBet + winAmount;
+      const embed = new EmbedBuilder()
+        .setTitle('❌ Daily Reward')
+        .setDescription(`You need to wait ${hoursLeft}h ${minutesLeft}m before claiming again!`)
+        .setColor('#ff0000');
       
-      if (multiplier > 0) {
-        updateStats(userData, true, winAmount);
-      } else {
-        updateStats(userData, false, slotBet);
-      }
-      
-      saveData();
+      await message.reply({ embeds: [embed] });
+      return;
+    }
 
-      const result = `${slot1} | ${slot2} | ${slot3}`;
-      if (multiplier > 0) {
-        await message.reply(`${result}\nMenang ${winAmount} ${config.currency.symbol}! Sekarang punya ${userData.balance} ${config.currency.symbol}`);
-      } else {
-        await message.reply(`${result}\nKalah ${slotBet} ${config.currency.symbol}! Sisa ${userData.balance} ${config.currency.symbol}`);
-      }
-      break;
+    const reward = 50;
+    const currentBalance = getBalance(message.author.id);
+    userBalances.set(message.author.id, currentBalance + reward);
+    lastDailyClaim.set(message.author.id, new Date());
 
-    case '!roulette':
-      const rouletteBet = parseInt(args[2]);
-      const betType = args[1]?.toLowerCase();
-      const validBets = ['red', 'black', 'even', 'odd', 'number'];
-      
-      if (!betType || !validBets.includes(betType)) {
-        await message.reply(`Cara main:\n!roulette red <bet>\n!roulette black <bet>\n!roulette even <bet>\n!roulette odd <bet>\n!roulette number <angka> <bet>`);
-        return;
-      }
+    const embed = new EmbedBuilder()
+      .setTitle('🎁 Daily Reward')
+      .setDescription(`You received ${formatBalance(reward)}!\nNew balance: ${formatBalance(currentBalance + reward)}`)
+      .setColor('#00ff00');
 
-      if (!rouletteBet || rouletteBet < config.gambling.roulette.min_bet || rouletteBet > config.gambling.roulette.max_bet) {
-        await message.reply(`Minimal ${config.gambling.roulette.min_bet} maksimal ${config.gambling.roulette.max_bet} ${config.currency.symbol}`);
-        return;
-      }
+    await message.reply({ embeds: [embed] });
+    return;
+  }
 
-      if (userData.balance < rouletteBet) {
-        await message.reply(`Duit kamu kurang! Perlu ${rouletteBet} ${config.currency.symbol}`);
-        return;
-      }
+  if (command === '!leaderboard') {
+    const sortedBalances = Array.from(userBalances.entries())
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10);
 
-      const number = Math.floor(Math.random() * 37);
-      const isRed = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].includes(number);
-      const isEven = number !== 0 && number % 2 === 0;
-      
-      let rouletteWin = false;
-      let rouletteMultiplier = 0;
+    const leaderboardList = await Promise.all(sortedBalances.map(async ([userId, balance], index) => {
+      const user = await client.users.fetch(userId);
+      return `${index + 1}. ${user.username}: ${formatBalance(balance)}`;
+    }));
 
-      if (betType === 'red' && isRed) {
-        rouletteWin = true;
-        rouletteMultiplier = config.gambling.roulette.multipliers.red_black;
-      } else if (betType === 'black' && !isRed && number !== 0) {
-        rouletteWin = true;
-        rouletteMultiplier = config.gambling.roulette.multipliers.red_black;
-      } else if (betType === 'even' && isEven) {
-        rouletteWin = true;
-        rouletteMultiplier = config.gambling.roulette.multipliers.even_odd;
-      } else if (betType === 'odd' && !isEven && number !== 0) {
-        rouletteWin = true;
-        rouletteMultiplier = config.gambling.roulette.multipliers.even_odd;
-      } else if (betType === 'number' && number === parseInt(args[2])) {
-        rouletteWin = true;
-        rouletteMultiplier = config.gambling.roulette.multipliers.straight;
-      }
+    const embed = new EmbedBuilder()
+      .setTitle('🏆 Richest Players')
+      .setDescription(leaderboardList.join('\n'))
+      .setColor('#ffd700');
 
-      const rouletteWinAmount = rouletteBet * rouletteMultiplier;
-      
-      if (rouletteWin) {
-        userData.balance += rouletteWinAmount;
-        updateStats(userData, true, rouletteWinAmount);
-        await message.reply(`${number} ${isRed ? '🔴' : '⚫'}\nMenang ${rouletteWinAmount} ${config.currency.symbol}! Sekarang punya ${userData.balance} ${config.currency.symbol}`);
-      } else {
-        userData.balance -= rouletteBet;
-        updateStats(userData, false, rouletteBet);
-        await message.reply(`${number} ${isRed ? '🔴' : '⚫'}\nKalah ${rouletteBet} ${config.currency.symbol}! Sisa ${userData.balance} ${config.currency.symbol}`);
-      }
-      saveData();
-      break;
+    await message.reply({ embeds: [embed] });
+    return;
+  }
 
-    case '!help':
-      const helpEmbed = new EmbedBuilder()
-        .setColor('#00FF00')
-        .setTitle('Commands')
-        .addFields(
-          { 
-            name: 'Uang',
-            value: `!daily - ${config.rewards.daily} ${config.currency.symbol} per hari\n!work - Kerja\n!balance - Cek uang\n!leaderboard - Top 10`
-          },
-          {
-            name: 'Games',
-            value: `!coinflip <bet>\n!slots <bet>\n!roulette <red/black/even/odd/number> <bet>`
-          }
-        );
-      await message.reply({ embeds: [helpEmbed] });
-      break;
+  if (command === '!addbal' && args.length === 2) {
+    const amount = parseInt(args[1]);
+    if (!isNaN(amount)) {
+      const currentBalance = getBalance(message.author.id);
+      userBalances.set(message.author.id, currentBalance + amount);
+      await message.reply(`Added ${amount} WL to your balance. New balance: ${formatBalance(getBalance(message.author.id))}`);
+    }
+    return;
+  }
+
+  if (command === '!csn') {
+    if (activeGames.has(message.channelId)) {
+      await message.reply('There is already an active CSN game in this channel!');
+      return;
+    }
+
+    const betAmount = parseInt(args[1]);
+    if (!args[1] || isNaN(betAmount) || betAmount <= 0) {
+      await message.reply('Please specify a valid bet amount: !csn <amount>');
+      return;
+    }
+
+    const userBalance = getBalance(message.author.id);
+    if (userBalance < betAmount) {
+      await message.reply(`You don't have enough balance! Your balance: ${formatBalance(userBalance)}`);
+      return;
+    }
+
+    const game = {
+      hoster: message.author.id,
+      betAmount: betAmount,
+      players: new Set(),
+      numbers: new Map(),
+    };
+    activeGames.set(message.channelId, game);
+
+    const embed = new EmbedBuilder()
+      .setTitle('🎲 CSN Game Started!')
+      .setDescription(`
+        Bet Amount: ${formatBalance(betAmount)}
+        Host: ${message.author.username}
+        Type !join to participate!
+      `)
+      .setColor('#00ff00');
+
+    await message.channel.send({ embeds: [embed] });
+    return;
+  }
+
+  if (command === '!join') {
+    const game = activeGames.get(message.channelId);
+    if (!game) {
+      await message.reply('There is no active CSN game in this channel!');
+      return;
+    }
+
+    if (game.hoster === message.author.id) {
+      await message.reply('Host cannot join their own game!');
+      return;
+    }
+
+    if (game.players.has(message.author.id)) {
+      await message.reply('You have already joined this game!');
+      return;
+    }
+
+    const userBalance = getBalance(message.author.id);
+    if (userBalance < game.betAmount) {
+      await message.reply(`You don't have enough balance! Your balance: ${formatBalance(userBalance)}`);
+      return;
+    }
+
+    game.players.add(message.author.id);
+    const number = Math.floor(Math.random() * 100) + 1;
+    game.numbers.set(message.author.id, number);
+
+    await message.reply(`You rolled: ${number}`);
+
+    if (game.players.size >= 1) {
+      const hostNumber = Math.floor(Math.random() * 100) + 1;
+      game.numbers.set(game.hoster, hostNumber);
+
+      let highestNumber = -1;
+      let winnerId = null;
+
+      game.numbers.forEach((num, playerId) => {
+        if (num > highestNumber) {
+          highestNumber = num;
+          winnerId = playerId;
+        }
+      });
+
+      const results = Array.from(game.numbers.entries())
+        .map(([playerId, num]) => `${playerId === game.hoster ? 'Host' : 'Player'} ${client.users.cache.get(playerId).username}: ${num}`)
+        .join('\n');
+
+      const winner = client.users.cache.get(winnerId);
+      const totalPot = game.betAmount * (game.players.size + 1);
+
+      game.players.forEach(playerId => {
+        const balance = getBalance(playerId);
+        userBalances.set(playerId, balance - game.betAmount);
+      });
+      const hostBalance = getBalance(game.hoster);
+      userBalances.set(game.hoster, hostBalance - game.betAmount);
+
+      const winnerBalance = getBalance(winnerId);
+      userBalances.set(winnerId, winnerBalance + totalPot);
+
+      const embed = new EmbedBuilder()
+        .setTitle('🎲 CSN Game Results!')
+        .setDescription(`
+          ${results}
+          
+          Winner: ${winner.username}
+          Prize: ${formatBalance(totalPot)}
+        `)
+        .setColor('#ffd700');
+
+      await message.channel.send({ embeds: [embed] });
+      activeGames.delete(message.channelId);
+    }
   }
 });
 
